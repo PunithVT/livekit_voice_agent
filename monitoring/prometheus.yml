@@ -1,0 +1,23 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'livekit-monitor'
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'backend'
+    metrics_path: '/api/metrics'
+    static_configs:
+      - targets: ['backend:5001']
+        labels:
+          service: 'backend'
+
+  - job_name: 'livekit'
+    static_configs:
+      - targets: ['livekit:7881']
+        labels:
+          service: 'livekit-server'
