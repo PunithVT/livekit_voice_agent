@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional, List
 
-from fastapi import FastAPI, HTTPException, Depends, Query, status
+from fastapi import FastAPI, HTTPException, Depends, Query, status, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -20,6 +20,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from prometheus_client import Counter, Histogram, generate_latest
 from fastapi.responses import Response
+from websocket_manager import manager, EventTypes, handle_websocket_message
 
 # Load environment variables
 load_dotenv()
@@ -362,6 +363,71 @@ async def general_exception_handler(request, exc):
             "timestamp": datetime.utcnow().isoformat()
         }
     )
+
+# WebSocket endpoints
+@app.websocket("/ws/{room_name}/{user_identity}")
+async def websocket_endpoint(websocket: WebSocket, room_name: str, user_identity: str):
+    """
+    WebSocket endpoint for real-time updates.
+
+    Provides real-time notifications for:
+    - Room events (user joined/left)
+    - Message updates
+    - Transcriptions
+    - Agent responses
+    """
+    await manager.connect(websocket, room_name, user_identity)
+
+    try:
+        # Notify room about new user
+        await manager.broadcast_to_room(
+            room_name,
+            {
+                "type": EventTypes.USER_JOINED,
+                "user": user_identity,
+                "timestamp": datetime.utcnow().isoformat(),
+                "participants": manager.get_room_participants(room_name)
+            },
+            exclude=websocket
+        )
+
+        # Message receive loop
+        while True:
+            data = await websocket.receive_json()
+            await handle_websocket_message(data, websocket, room_name)
+
+    except WebSocketDisconnect:
+        manager.disconnect(websocket, room_name, user_identity)
+
+        # Notify room about user leaving
+        await manager.broadcast_to_room(
+            room_name,
+            {
+                "type": EventTypes.USER_LEFT,
+                "user": user_identity,
+                "timestamp": datetime.utcnow().isoformat(),
+                "participants": manager.get_room_participants(room_name)
+            }
+        )
+    except Exception as e:
+        logger.error(f"WebSocket error: {str(e)}")
+        manager.disconnect(websocket, room_name, user_identity)
+
+@app.get("/api/ws/rooms", tags=["WebSocket"])
+async def list_websocket_rooms():
+    """List all active WebSocket rooms"""
+    rooms = manager.get_all_rooms()
+    return {
+        "rooms": rooms,
+        "count": len(rooms),
+        "details": [
+            {
+                "room": room,
+                "participants": manager.get_room_participants(room)
+            }
+            for room in rooms
+        ]
+    }
 
 # Run with uvicorn
 if __name__ == "__main__":
