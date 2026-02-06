@@ -1,0 +1,22 @@
+port: 7880
+rtc:
+  port_range_start: 50000
+  port_range_end: 60000
+  use_external_ip: true
+
+redis:
+  address: redis:6379
+  password: redis_password
+  db: 0
+
+keys:
+  # Generate with: openssl rand -base64 32
+  ${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}
+
+room:
+  empty_timeout: 300 # 5 minutes
+  auto_create: true
+
+logging:
+  level: info
+  json: true

@@ -1,0 +1,164 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: livekit-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-livekit}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-livekit_password}
+      POSTGRES_DB: ${POSTGRES_DB:-livekit_tutor}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/init_db.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - livekit-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-livekit}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for caching and session management
+  redis:
+    image: redis:7-alpine
+    container_name: livekit-redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_password}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - livekit-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend FastAPI Service
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: livekit-backend
+    environment:
+      # LiveKit Configuration
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
+      LIVEKIT_URL: ${LIVEKIT_URL:-ws://localhost:7880}
+
+      # OpenAI Configuration
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+
+      # Database Configuration
+      DATABASE_URL: postgresql://${POSTGRES_USER:-livekit}:${POSTGRES_PASSWORD:-livekit_password}@postgres:5432/${POSTGRES_DB:-livekit_tutor}
+
+      # Redis Configuration
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_password}@redis:6379/0
+
+      # Server Configuration
+      PORT: 5001
+      HOST: 0.0.0.0
+      DEBUG: ${DEBUG:-false}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:80}
+
+      # Security
+      SECRET_KEY: ${SECRET_KEY:-your-secret-key-change-in-production}
+
+    volumes:
+      - ./backend:/app
+      - backend_data:/app/data
+    ports:
+      - "5001:5001"
+    networks:
+      - livekit-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Frontend React Service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: livekit-frontend
+    environment:
+      VITE_LIVEKIT_URL: ${LIVEKIT_URL:-ws://localhost:7880}
+      VITE_API_URL: ${API_URL:-http://localhost:5001}
+    ports:
+      - "80:80"
+      - "3000:80"
+    networks:
+      - livekit-network
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # LiveKit Server (Optional - can use cloud instance instead)
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: livekit-server
+    command: --config /etc/livekit.yaml
+    volumes:
+      - ./livekit-config.yaml:/etc/livekit.yaml
+    ports:
+      - "7880:7880"      # WebRTC
+      - "7881:7881"      # Service API
+      - "7882:7882/udp"  # WebRTC UDP
+    networks:
+      - livekit-network
+    restart: unless-stopped
+
+  # Prometheus for Metrics
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: livekit-prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    ports:
+      - "9090:9090"
+    networks:
+      - livekit-network
+    restart: unless-stopped
+
+  # Grafana for Visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: livekit-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_SERVER_ROOT_URL: http://localhost:3001
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    ports:
+      - "3001:3000"
+    networks:
+      - livekit-network
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  backend_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  livekit-network:
+    driver: bridge
