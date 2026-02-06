@@ -1,5 +1,91 @@
-ai/
-.vscode/
+# Python
 __pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Testing
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.hypothesis/
+
+# Jupyter
+.ipynb_checkpoints
+*.ipynb
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+
+# Build
+dist/
+build/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment
 .env
+.env.local
+.env.*.local
+*.env
+
+# Database
+*.sqlite
+*.db
+tutor_db.sqlite
 auto_db.sqlite
+
+# Docker
+*.log
+docker-compose.override.yml
+
+# Monitoring
+prometheus_data/
+grafana_data/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Logs
+logs/
+*.log
+
+# AI
+ai/
+
+# Redis
+dump.rdb
