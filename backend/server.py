@@ -429,6 +429,91 @@ async def list_websocket_rooms():
         ]
     }
 
+# Analytics endpoints
+@app.get("/api/analytics/conversations/{conversation_id}", tags=["Analytics"])
+async def get_conversation_analytics(conversation_id: int):
+    """Get analytics for a specific conversation"""
+    try:
+        from db_driver import DatabaseDriver
+        db = DatabaseDriver()
+
+        messages = db.get_conversation_messages(conversation_id)
+
+        # Calculate metrics
+        user_messages = [m for m in messages if m.role == "user"]
+        assistant_messages = [m for m in messages if m.role == "assistant"]
+
+        return {
+            "conversation_id": conversation_id,
+            "total_messages": len(messages),
+            "user_messages": len(user_messages),
+            "assistant_messages": len(assistant_messages),
+            "message_breakdown": {
+                "user": len(user_messages),
+                "assistant": len(assistant_messages),
+                "system": len([m for m in messages if m.role == "system"])
+            }
+        }
+    except Exception as e:
+        logger.error(f"Analytics error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get analytics: {str(e)}"
+        )
+
+@app.get("/api/analytics/summary", tags=["Analytics"])
+async def get_overall_analytics():
+    """Get overall platform analytics"""
+    try:
+        from db_driver import DatabaseDriver
+        import sqlite3
+
+        db = DatabaseDriver()
+
+        with db._get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Total conversations
+            cursor.execute("SELECT COUNT(*) FROM conversations")
+            total_conversations = cursor.fetchone()[0]
+
+            # Active conversations
+            cursor.execute("SELECT COUNT(*) FROM conversations WHERE status = 'active'")
+            active_conversations = cursor.fetchone()[0]
+
+            # Total messages
+            cursor.execute("SELECT COUNT(*) FROM messages")
+            total_messages = cursor.fetchone()[0]
+
+            # Total subtopics
+            cursor.execute("SELECT COUNT(*) FROM subtopics")
+            total_subtopics = cursor.fetchone()[0]
+
+            # Top topics
+            cursor.execute("""
+                SELECT topic, COUNT(*) as count
+                FROM subtopics
+                GROUP BY topic
+                ORDER BY count DESC
+                LIMIT 5
+            """)
+            top_topics = [{"topic": row[0], "count": row[1]} for row in cursor.fetchall()]
+
+        return {
+            "total_conversations": total_conversations,
+            "active_conversations": active_conversations,
+            "total_messages": total_messages,
+            "total_subtopics": total_subtopics,
+            "top_topics": top_topics,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Analytics summary error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get analytics summary: {str(e)}"
+        )
+
 # Run with uvicorn
 if __name__ == "__main__":
     import uvicorn
